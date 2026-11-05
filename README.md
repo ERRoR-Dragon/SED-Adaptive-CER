@@ -6,10 +6,6 @@ We add a small learned budget predictor to [SED](https://github.com/xb534/SED), 
 
 ## Run on Windows
 
-Use PowerShell with Python 3.13, Git, and a CUDA-capable NVIDIA GPU. This project was built for the 6 GB RTX 4050 Laptop GPU in an HP Victus. The default run uses one image at a time and FP16 autocast.
-
-On the Victus with the runtime already staged:
-
 ~~~powershell
 .\scripts\run.ps1
 ~~~
