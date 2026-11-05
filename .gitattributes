@@ -1,0 +1,4 @@
+# Preserve the exact source bytes recorded in the benchmark manifest.
+src/sed_adaptive_cer/*.py -text
+src/sed_adaptive_cer/experiment.py whitespace=cr-at-eol,-blank-at-eof
+patches/*.patch -text whitespace=-blank-at-eol

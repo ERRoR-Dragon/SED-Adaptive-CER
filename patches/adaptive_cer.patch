@@ -1,0 +1,69 @@
+--- a/sed/modeling/transformer/model.py
++++ b/sed/modeling/transformer/model.py
+@@ -618,6 +618,9 @@
+         self.head = nn.Conv2d(decoder_dims[2], 1, kernel_size=3, stride=1, padding=1)
+         self.fast_infer = fast_inference
+         self.topK = topK
++        self.cer_policy = None
++        self.cer_budget = None
++        self.cer_kept = None
+         # self.clip_vis_projection = nn.Conv2d(1536, 768, kernel_size=3, stride=1, padding=1)
+ 
+     def feature_map(self, img_feats, text_feats):
+@@ -679,6 +682,16 @@
+         corr_embed = rearrange(x, 'B C T H W -> (B T) C H W')
+         mask_aux = self.head0(corr_embed)
+         mask_aux = rearrange(mask_aux, '(B T) () H W -> B T H W', B=B)
++        if self.cer_policy is not None:
++            if B != 1:
++                raise ValueError('Adaptive CER requires a batch of one image.')
++            topK = self.cer_policy(mask_aux)
++            if topK is None:
++                dense_logits = self.conv_decoder(x, text_guidance, guidance, corr_guidance)[0]
++                return [dense_logits.sigmoid()]
++            if not isinstance(topK, int) or topK < 1:
++                raise ValueError('CER budget must be a positive integer or None.')
++        self.cer_budget = topK
+         aux_valid = self.get_valid_idx_from_mask(mask_aux, topK)
+         corr_embed = self.decoder1(corr_embed[aux_valid], text_guidance[0], guidance[0], corr_guidance[0][aux_valid])
+         mask_aux0 = self.head1(corr_embed)
+@@ -696,7 +709,8 @@
+         valid_idx1[aux0_valid] = aux1_valid
+         valid_idx[aux_valid] = valid_idx1
+         _, _, H, W = corr_embed.size()
+-        output = torch.zeros([B, T, H, W]).cuda()
++        self.cer_kept = valid_idx
++        output = corr_embed.new_zeros((B, T, H, W))
+         output[:, valid_idx] = corr_embed.sigmoid()
+         return [output]
+ 
+@@ -707,7 +721,7 @@
+         valid_idx = torch.bincount(mask, minlength=T) > 0
+         return valid_idx
+ 
+-    def forward(self, img_feats, text_feats, appearance_guidance, logit_scale):
++    def prepare_decoder(self, img_feats, text_feats, appearance_guidance, logit_scale):
+         """
+         Arguments:
+             img_feats: (B, C, H, W)
+@@ -736,9 +750,15 @@
+             text_feats = text_feats.mean(dim=-2)
+             text_feats = text_feats / text_feats.norm(dim=-1, keepdim=True)
+             projected_text_guidance = [proj(text_feats) for proj in self.text_guidance_projection]
++        return corr_embed, projected_text_guidance, projected_decoder_guidance, projected_corr_decoder_guidance
++
++    def decode_prepared(self, corr_embed, text_guidance, guidance, corr_guidance):
++        self.cer_budget = None
++        self.cer_kept = None
+         if self.fast_infer and not self.training:
+-            logit = self.fast_conv_decoder(corr_embed, projected_text_guidance, projected_decoder_guidance, projected_corr_decoder_guidance, topK=self.topK)
+-        else:
+-            logit = self.conv_decoder(corr_embed, projected_text_guidance, projected_decoder_guidance, projected_corr_decoder_guidance)
+-
+-        return logit
++            return self.fast_conv_decoder(corr_embed, text_guidance, guidance, corr_guidance, topK=self.topK)
++        return self.conv_decoder(corr_embed, text_guidance, guidance, corr_guidance)
++
++    def forward(self, img_feats, text_feats, appearance_guidance, logit_scale):
++        prepared = self.prepare_decoder(img_feats, text_feats, appearance_guidance, logit_scale)
++        return self.decode_prepared(*prepared)
