@@ -1,5 +1,4 @@
 .runtime/
-.sed-runtime-path
 .venv/
 runs/
 __pycache__/
@@ -9,3 +8,4 @@ __pycache__/
 *.pt
 *.zip
 ~$*
+*/__pycache__/
